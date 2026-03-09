@@ -57,6 +57,7 @@ class PositionPnL:
     cost_basis: float
     unrealized_pnl: float
     unrealized_pnl_pct: float
+    incomplete_history: bool = False   # cost basis may be understated — CSV missing early buys
 
 
 @dataclass
@@ -119,7 +120,7 @@ def calculate(
     position_pnls = []
 
     for pos in positions:
-        symbol, qty, avg_cost, cost_basis, broker = _unpack_position(pos)
+        symbol, qty, avg_cost, cost_basis, broker, incomplete = _unpack_position(pos)
 
         price = prices.get(symbol)
         if price is None:
@@ -142,6 +143,7 @@ def calculate(
                 cost_basis=round(cost_basis, 2),
                 unrealized_pnl=round(unrealized_pnl, 2),
                 unrealized_pnl_pct=round(unrealized_pnl_pct, 4),
+                incomplete_history=incomplete,
             )
         )
 
@@ -178,8 +180,12 @@ def _unpack_position(pos) -> tuple:
             float(pos["avg_cost"]),
             float(pos["cost_basis"]),
             pos.get("broker", "unknown"),
+            bool(pos.get("incomplete_history", False)),
         )
-    return pos.symbol, pos.quantity, pos.avg_cost, pos.cost_basis, pos.broker
+    return (
+        pos.symbol, pos.quantity, pos.avg_cost, pos.cost_basis, pos.broker,
+        getattr(pos, "incomplete_history", False),
+    )
 
 
 def _unpack_realized_pnl(trade) -> float:

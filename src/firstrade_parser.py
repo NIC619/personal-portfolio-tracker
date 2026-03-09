@@ -30,6 +30,7 @@ class Position:
     avg_cost: float        # average cost per share of remaining open lots
     cost_basis: float      # total cost of remaining open lots (avg_cost * quantity)
     broker: str = "firstrade"
+    incomplete_history: bool = False   # True if CSV missing earlier buy lots for this symbol
 
 
 @dataclass
@@ -64,6 +65,7 @@ def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
     rows = _load_rows(path)
     open_lots: Dict[str, deque] = {}       # symbol -> deque of [qty, price, date]
     realized_trades: List[RealizedTrade] = []
+    incomplete_symbols: set = set()        # symbols that had unmatched sell lots
 
     for row in rows:
         action = row["Action"].strip().lower()
@@ -81,10 +83,12 @@ def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
             open_lots[symbol].append([quantity, price, date_str])
 
         elif action == "sell":
-            trades = _match_sell_fifo(symbol, quantity, price, date_str, open_lots)
+            trades, had_oversell = _match_sell_fifo(symbol, quantity, price, date_str, open_lots)
             realized_trades.extend(trades)
+            if had_oversell:
+                incomplete_symbols.add(symbol)
 
-    open_positions = _build_positions(open_lots)
+    open_positions = _build_positions(open_lots, incomplete_symbols)
     return open_positions, realized_trades
 
 
@@ -120,8 +124,12 @@ def _match_sell_fifo(
     sell_price: float,
     sell_date: str,
     open_lots: Dict[str, deque],
-) -> List[RealizedTrade]:
-    """Consume buy lots FIFO and return one RealizedTrade per lot consumed."""
+) -> tuple[List[RealizedTrade], bool]:
+    """
+    Consume buy lots FIFO and return (realized_trades, had_oversell).
+    had_oversell is True if the sell exceeded available buy lots, meaning
+    the CSV is missing earlier purchase history for this symbol.
+    """
     trades = []
     lots = open_lots.get(symbol, deque())
     remaining = sell_qty
@@ -152,19 +160,11 @@ def _match_sell_fifo(
         )
         remaining -= consumed
 
-    if remaining > 1e-9:
-        # Sold more than we have on record — warn but don't crash
-        # (threshold avoids false positives from floating-point rounding)
-        import warnings
-        warnings.warn(
-            f"Oversell detected for {symbol}: {remaining:.4f} shares sold with no matching buy lots. "
-            "Your CSV may not include the full trade history for this symbol."
-        )
-
-    return trades
+    had_oversell = remaining > 1e-9
+    return trades, had_oversell
 
 
-def _build_positions(open_lots: Dict[str, deque]) -> List[Position]:
+def _build_positions(open_lots: Dict[str, deque], incomplete_symbols: set) -> List[Position]:
     positions = []
     for symbol, lots in open_lots.items():
         if not lots:
@@ -180,6 +180,7 @@ def _build_positions(open_lots: Dict[str, deque]) -> List[Position]:
                 quantity=round(total_qty, 6),
                 avg_cost=round(avg_cost, 6),
                 cost_basis=round(total_cost, 4),
+                incomplete_history=symbol in incomplete_symbols,
             )
         )
     return positions

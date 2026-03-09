@@ -51,12 +51,22 @@ def _render_positions_table(positions: list[PositionPnL]) -> None:
     table.add_column("Unr P&L ($)",    justify="right",      no_wrap=True)
     table.add_column("Unr P&L (%)",    justify="right",      no_wrap=True)
 
+    has_incomplete = any(p.incomplete_history for p in positions)
+
     for p in sorted(positions, key=lambda x: x.symbol):
+        symbol_cell = Text()
+        symbol_cell.append(p.symbol, style="bold white")
+        if p.incomplete_history:
+            symbol_cell.append(" *", style="bold yellow")
+
+        avg_cost_cell = Text()
+        avg_cost_cell.append(f"${p.avg_cost:,.2f}", style="yellow" if p.incomplete_history else "")
+
         table.add_row(
-            p.symbol,
+            symbol_cell,
             p.broker,
             f"{p.quantity:,.4f}".rstrip("0").rstrip("."),
-            f"${p.avg_cost:,.2f}",
+            avg_cost_cell,
             f"${p.current_price:,.2f}",
             f"${p.market_value:,.2f}",
             _pnl_text(p.unrealized_pnl, dollar=True),
@@ -64,6 +74,13 @@ def _render_positions_table(positions: list[PositionPnL]) -> None:
         )
 
     console.print(table)
+
+    if has_incomplete:
+        console.print(
+            "  [yellow]*[/yellow] Cost basis incomplete — CSV missing earlier buy history. "
+            "Re-export with a wider date range to fix.",
+            highlight=False,
+        )
 
 
 def _render_summary_table(summary: PortfolioSummary) -> None:
