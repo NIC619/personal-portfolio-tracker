@@ -4,12 +4,11 @@ main.py
 Entry point for the portfolio tracker.
 
 Usage:
-    python main.py                  # Full refresh (all sources)
-    python main.py --firstrade      # Firstrade only
-    python main.py --no-prices      # Use cached prices, skip yfinance fetch
-
-Planned (not yet implemented):
-    python main.py --schwab         # Schwab only
+    python main.py                      # Firstrade + Schwab (when credentials ready)
+    python main.py --firstrade          # Firstrade CSV only
+    python main.py --schwab             # Schwab API only
+    python main.py --schwab-mock        # Schwab mock data (no credentials needed)
+    python main.py --no-prices          # Use cached prices, skip yfinance fetch
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from pathlib import Path
 
 import yaml
 
+
 # ---------------------------------------------------------------------------
 # CLI args
 # ---------------------------------------------------------------------------
@@ -30,10 +30,11 @@ def _parse_args() -> argparse.Namespace:
         description="Personal portfolio P&L tracker — Schwab + Firstrade"
     )
     source = parser.add_mutually_exclusive_group()
-    source.add_argument("--firstrade", action="store_true", help="Firstrade CSV only")
-    source.add_argument("--schwab",    action="store_true", help="Schwab API only (not yet implemented)")
-    parser.add_argument("--no-prices", action="store_true", help="Use cached prices, skip yfinance")
-    parser.add_argument("--config",    default="config.yaml", help="Path to config file")
+    source.add_argument("--firstrade",   action="store_true", help="Firstrade CSV only")
+    source.add_argument("--schwab",      action="store_true", help="Schwab API only (requires credentials)")
+    source.add_argument("--schwab-mock", action="store_true", help="Schwab mock data — test without credentials")
+    parser.add_argument("--no-prices",   action="store_true", help="Use cached prices, skip yfinance")
+    parser.add_argument("--config",      default="config.yaml", help="Path to config file")
     return parser.parse_args()
 
 
@@ -45,7 +46,7 @@ def _load_config(path: str) -> dict:
     p = Path(path)
     if not p.exists():
         template = Path("config.yaml.template")
-        hint = f" Copy config.yaml.template to config.yaml and fill in your values." if template.exists() else ""
+        hint = " Copy config.yaml.template to config.yaml and fill in your values." if template.exists() else ""
         sys.exit(f"Error: config file not found at '{path}'.{hint}")
     with open(p) as f:
         return yaml.safe_load(f)
@@ -59,13 +60,12 @@ def main() -> None:
     args = _parse_args()
     config = _load_config(args.config)
 
-    all_positions = []
-    all_realized  = []
+    sources = []
 
     # -----------------------------------------------------------------------
     # Firstrade
     # -----------------------------------------------------------------------
-    if not args.schwab:   # run firstrade unless --schwab-only
+    if not args.schwab and not args.schwab_mock:
         from src.firstrade_parser import parse as parse_firstrade
 
         csv_path = config.get("firstrade", {}).get("csv_path", "./data/firstrade_export.csv")
@@ -73,10 +73,9 @@ def main() -> None:
 
         if ft_csv.exists():
             print(f"Parsing Firstrade CSV: {ft_csv}")
-            positions, realized = parse_firstrade(ft_csv)
-            all_positions.extend(positions)
-            all_realized.extend(realized)
-            print(f"  {len(positions)} open position(s), {len(realized)} realized trade(s)")
+            ft_data = parse_firstrade(ft_csv)
+            sources.append(ft_data)
+            print(f"  {len(ft_data[0])} open position(s), {len(ft_data[1])} realized trade(s)")
         else:
             warnings.warn(
                 f"Firstrade CSV not found at '{ft_csv}'. "
@@ -84,15 +83,36 @@ def main() -> None:
             )
 
     # -----------------------------------------------------------------------
-    # Schwab (placeholder — requires dev account + OAuth setup)
+    # Schwab — live API
     # -----------------------------------------------------------------------
-    if args.schwab or not args.firstrade:
-        # TODO: import and call schwab_fetcher once implemented
-        if args.schwab:
-            sys.exit("Schwab integration is not yet implemented. Coming soon.")
+    if args.schwab:
+        from src.schwab_fetcher import fetch as fetch_schwab
 
-    if not all_positions:
+        print("Fetching Schwab positions and transactions...")
+        schwab_data = fetch_schwab(config)
+        sources.append(schwab_data)
+        print(f"  {len(schwab_data[0])} open position(s), {len(schwab_data[1])} realized trade(s)")
+
+    # -----------------------------------------------------------------------
+    # Schwab — mock (for testing before credentials arrive)
+    # -----------------------------------------------------------------------
+    if args.schwab_mock:
+        from src.schwab_fetcher import fetch_mock as fetch_schwab_mock
+
+        print("Loading Schwab mock data...")
+        schwab_data = fetch_schwab_mock()
+        sources.append(schwab_data)
+        print(f"  {len(schwab_data[0])} open position(s), {len(schwab_data[1])} realized trade(s)")
+
+    if not sources:
         sys.exit("No positions loaded — nothing to display.")
+
+    # -----------------------------------------------------------------------
+    # Aggregate
+    # -----------------------------------------------------------------------
+    from src.aggregator import merge
+
+    all_positions, all_realized = merge(*sources)
 
     # -----------------------------------------------------------------------
     # Price fetch
