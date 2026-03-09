@@ -73,7 +73,7 @@ def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
         symbol = row["Symbol"].strip().upper()
         quantity = abs(float(row["Quantity"]))   # real export uses negative qty for sells
         price = float(row["Price"])
-        date_str = _date_col(row)
+        date_str = row["TradeDate"].strip()
 
         if action == "buy":
             if symbol not in open_lots:
@@ -101,24 +101,17 @@ def _load_rows(path: Path) -> List[dict]:
             # Skip rows with no Symbol (e.g. blank lines, totals rows)
             if not row.get("Symbol", "").strip():
                 continue
-            row["_date"] = _parse_date(_date_col(row))
+            row["_date"] = _parse_date(row["TradeDate"].strip())
             rows.append(row)
     rows.sort(key=lambda r: r["_date"])
     return rows
 
 
-def _date_col(row: dict) -> str:
-    """Return the date string from either 'TradeDate' (real export) or 'Date' (mock)."""
-    return (row.get("TradeDate") or row.get("Date") or "").strip()
-
-
 def _parse_date(date_str: str) -> datetime:
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
-        try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            continue
-    raise ValueError(f"Unrecognized date format: {date_str!r}")
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"Unrecognized date format: {date_str!r} (expected YYYY-MM-DD)")
 
 
 def _match_sell_fifo(
