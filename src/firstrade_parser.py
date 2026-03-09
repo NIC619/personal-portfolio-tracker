@@ -71,9 +71,9 @@ def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
             continue
 
         symbol = row["Symbol"].strip().upper()
-        quantity = float(row["Quantity"])
+        quantity = abs(float(row["Quantity"]))   # real export uses negative qty for sells
         price = float(row["Price"])
-        date_str = row["Date"].strip()
+        date_str = _date_col(row)
 
         if action == "buy":
             if symbol not in open_lots:
@@ -101,10 +101,15 @@ def _load_rows(path: Path) -> List[dict]:
             # Skip rows with no Symbol (e.g. blank lines, totals rows)
             if not row.get("Symbol", "").strip():
                 continue
-            row["_date"] = _parse_date(row["Date"].strip())
+            row["_date"] = _parse_date(_date_col(row))
             rows.append(row)
     rows.sort(key=lambda r: r["_date"])
     return rows
+
+
+def _date_col(row: dict) -> str:
+    """Return the date string from either 'TradeDate' (real export) or 'Date' (mock)."""
+    return (row.get("TradeDate") or row.get("Date") or "").strip()
 
 
 def _parse_date(date_str: str) -> datetime:
@@ -154,12 +159,13 @@ def _match_sell_fifo(
         )
         remaining -= consumed
 
-    if remaining > 0:
+    if remaining > 1e-9:
         # Sold more than we have on record — warn but don't crash
+        # (threshold avoids false positives from floating-point rounding)
         import warnings
         warnings.warn(
-            f"Oversell detected for {symbol}: {remaining} shares sold with no matching buy lots. "
-            "Check your CSV for missing history."
+            f"Oversell detected for {symbol}: {remaining:.4f} shares sold with no matching buy lots. "
+            "Your CSV may not include the full trade history for this symbol."
         )
 
     return trades
@@ -171,7 +177,7 @@ def _build_positions(open_lots: Dict[str, deque]) -> List[Position]:
         if not lots:
             continue
         total_qty = sum(lot[0] for lot in lots)
-        if total_qty <= 0:
+        if total_qty < 1e-9:
             continue
         total_cost = sum(lot[0] * lot[1] for lot in lots)
         avg_cost = total_cost / total_qty
