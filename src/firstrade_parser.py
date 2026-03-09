@@ -97,7 +97,16 @@ def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
 # ---------------------------------------------------------------------------
 
 def _load_rows(path: Path) -> List[dict]:
-    """Read CSV and return rows sorted by date ascending."""
+    """Read CSV and return rows sorted by date ascending.
+
+    Secondary sort: within the same date, BUYs before SELLs.
+    Firstrade CSV exports do not preserve intraday order and sometimes
+    lists a SELL before the BUY that preceded it on the same day.
+    Sorting BUYs first ensures same-day buy-then-sell sequences are
+    processed correctly and avoids false oversell detections.
+    """
+    ACTION_ORDER = {"BUY": 0, "SELL": 1}
+
     rows = []
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
@@ -107,7 +116,7 @@ def _load_rows(path: Path) -> List[dict]:
                 continue
             row["_date"] = _parse_date(row["TradeDate"].strip())
             rows.append(row)
-    rows.sort(key=lambda r: r["_date"])
+    rows.sort(key=lambda r: (r["_date"], ACTION_ORDER.get(r["Action"].strip().upper(), 99)))
     return rows
 
 
