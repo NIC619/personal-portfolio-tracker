@@ -20,12 +20,12 @@ from src.pnl_engine import PortfolioSummary, PositionPnL
 console = Console()
 
 
-def render(summary: PortfolioSummary) -> None:
+def render(summary: PortfolioSummary, date_from: str | None = None, date_to: str | None = None) -> None:
     """Print the full portfolio view to the terminal."""
     console.print()
     _render_positions_table(summary.positions)
     console.print()
-    _render_summary_table(summary)
+    _render_summary_table(summary, date_from=date_from, date_to=date_to)
     console.print()
 
 
@@ -83,9 +83,19 @@ def _render_positions_table(positions: list[PositionPnL]) -> None:
         )
 
 
-def _render_summary_table(summary: PortfolioSummary) -> None:
+def _render_summary_table(summary: PortfolioSummary, date_from: str | None = None, date_to: str | None = None) -> None:
+    if date_from or date_to:
+        range_parts = []
+        if date_from:
+            range_parts.append(f"from {date_from}")
+        if date_to:
+            range_parts.append(f"to {date_to}")
+        title = f"Portfolio Summary ({', '.join(range_parts)})"
+    else:
+        title = "Portfolio Summary"
+
     table = Table(
-        title="Portfolio Summary",
+        title=title,
         box=box.SIMPLE_HEAVY,
         show_header=False,
         title_style="bold white",

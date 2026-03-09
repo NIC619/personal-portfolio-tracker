@@ -4,11 +4,14 @@ main.py
 Entry point for the portfolio tracker.
 
 Usage:
-    python main.py                      # Firstrade + Schwab (when credentials ready)
-    python main.py --firstrade          # Firstrade CSV only
-    python main.py --schwab             # Schwab API only
-    python main.py --schwab-mock        # Schwab mock data (no credentials needed)
-    python main.py --no-prices          # Use cached prices, skip yfinance fetch
+    python main.py                              # Firstrade + Schwab (when credentials ready)
+    python main.py --firstrade                  # Firstrade CSV only
+    python main.py --schwab                     # Schwab API only
+    python main.py --schwab-mock                # Schwab mock data (no credentials needed)
+    python main.py --no-prices                  # Use cached prices, skip yfinance fetch
+    python main.py --from 2023-03-09            # Realized P&L from this date onward
+    python main.py --to 2025-05-31              # Portfolio state and P&L up to this date
+    python main.py --from 2024-01-01 --to 2024-12-31  # Full year range
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from __future__ import annotations
 import argparse
 import sys
 import warnings
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -35,7 +39,20 @@ def _parse_args() -> argparse.Namespace:
     source.add_argument("--schwab-mock", action="store_true", help="Schwab mock data — test without credentials")
     parser.add_argument("--no-prices",   action="store_true", help="Use cached prices, skip yfinance")
     parser.add_argument("--config",      default="config.yaml", help="Path to config file")
+    parser.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD",
+                        help="Realized P&L start date (inclusive)")
+    parser.add_argument("--to",   dest="date_to",   metavar="YYYY-MM-DD",
+                        help="Portfolio snapshot and P&L end date (inclusive)")
     return parser.parse_args()
+
+
+def _parse_date_arg(value: str | None, label: str) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        sys.exit(f"Invalid {label} date '{value}' — expected format: YYYY-MM-DD")
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +77,12 @@ def main() -> None:
     args = _parse_args()
     config = _load_config(args.config)
 
+    date_from = _parse_date_arg(args.date_from, "--from")
+    date_to   = _parse_date_arg(args.date_to,   "--to")
+
+    if date_from and date_to and date_from > date_to:
+        sys.exit(f"--from ({args.date_from}) must be before --to ({args.date_to})")
+
     sources = []
 
     # -----------------------------------------------------------------------
@@ -73,7 +96,7 @@ def main() -> None:
 
         if ft_csv.exists():
             print(f"Parsing Firstrade CSV: {ft_csv}")
-            ft_data = parse_firstrade(ft_csv)
+            ft_data = parse_firstrade(ft_csv, start_date=date_from, end_date=date_to)
             sources.append(ft_data)
             print(f"  {len(ft_data[0])} open position(s), {len(ft_data[1])} realized trade(s)")
         else:
@@ -132,7 +155,7 @@ def main() -> None:
     from src.display import render
 
     summary = calculate(all_positions, prices, all_realized)
-    render(summary)
+    render(summary, date_from=args.date_from, date_to=args.date_to)
 
 
 if __name__ == "__main__":

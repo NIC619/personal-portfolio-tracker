@@ -51,9 +51,22 @@ class RealizedTrade:
 TRADE_ACTIONS = {"buy", "sell"}
 
 
-def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
+def parse(
+    csv_path: str | Path,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> tuple[List[Position], List[RealizedTrade]]:
     """
     Parse a Firstrade CSV export.
+
+    Args:
+        csv_path:   Path to the CSV file.
+        start_date: If given, realized trades with sell_date < start_date are
+                    excluded from the returned list (but still used for FIFO
+                    lot matching so cost basis remains accurate).
+        end_date:   If given, only transactions on or before this date are
+                    processed. Open positions reflect the portfolio state at
+                    end_date. Realized trades after end_date are excluded.
 
     Returns:
         (open_positions, realized_trades)
@@ -63,8 +76,13 @@ def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
         raise FileNotFoundError(f"Firstrade CSV not found: {path}")
 
     rows = _load_rows(path)
+
+    # Trim to end_date for FIFO — open positions will reflect end_date state
+    if end_date:
+        rows = [r for r in rows if r["_date"] <= end_date]
+
     open_lots: Dict[str, deque] = {}       # symbol -> deque of [qty, price, date]
-    realized_trades: List[RealizedTrade] = []
+    all_realized: List[RealizedTrade] = []
     incomplete_symbols: set = set()        # symbols that had unmatched sell lots
 
     for row in rows:
@@ -84,9 +102,15 @@ def parse(csv_path: str | Path) -> tuple[List[Position], List[RealizedTrade]]:
 
         elif action == "sell":
             trades, had_oversell = _match_sell_fifo(symbol, quantity, price, date_str, open_lots)
-            realized_trades.extend(trades)
+            all_realized.extend(trades)
             if had_oversell:
                 incomplete_symbols.add(symbol)
+
+    # Filter realized trades to the requested start_date window
+    realized_trades = [
+        t for t in all_realized
+        if (start_date is None or _parse_date(t.sell_date) >= start_date)
+    ]
 
     open_positions = _build_positions(open_lots, incomplete_symbols)
     return open_positions, realized_trades
