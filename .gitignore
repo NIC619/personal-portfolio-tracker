@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+config.yaml
+
+# Data files (may contain sensitive account info)
+data/firstrade_export.csv
+data/schwab_token.json
+data/cache.json
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp

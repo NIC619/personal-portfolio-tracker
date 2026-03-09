@@ -1,0 +1,9 @@
+Date,Action,Symbol,Description,Quantity,Price,Amount
+01/10/2024,Buy,AAPL,Apple Inc,10,150.00,-1500.00
+01/15/2024,Buy,MSFT,Microsoft Corp,5,380.00,-1900.00
+02/01/2024,Buy,AAPL,Apple Inc,5,160.00,-800.00
+02/20/2024,Buy,NVDA,Nvidia Corp,3,800.00,-2400.00
+03/05/2024,Sell,AAPL,Apple Inc,8,180.00,1440.00
+04/01/2024,Dividend,AAPL,Apple Inc,,0.25,25.00
+05/10/2024,Sell,MSFT,Microsoft Corp,2,400.00,800.00
+06/15/2024,Buy,MSFT,Microsoft Corp,3,390.00,-1170.00

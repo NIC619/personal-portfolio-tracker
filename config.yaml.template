@@ -1,0 +1,12 @@
+schwab:
+  app_key: YOUR_APP_KEY
+  app_secret: YOUR_APP_SECRET
+  token_path: ./data/schwab_token.json
+  callback_url: https://127.0.0.1:8182
+
+firstrade:
+  csv_path: ./data/firstrade_export.csv
+
+display:
+  currency: USD
+  show_zero_positions: false
