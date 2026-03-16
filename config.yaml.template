@@ -3,6 +3,7 @@ schwab:
   app_secret: YOUR_APP_SECRET
   token_path: ./data/schwab_token.json
   callback_url: https://127.0.0.1:8182
+  csv_path: ./data/schwab_export.csv
 
 firstrade:
   csv_path: ./data/firstrade_export.csv

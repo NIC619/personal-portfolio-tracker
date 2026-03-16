@@ -4,13 +4,14 @@ main.py
 Entry point for the portfolio tracker.
 
 Usage:
-    python main.py                              # Firstrade + Schwab (when credentials ready)
-    python main.py --firstrade                  # Firstrade CSV only
-    python main.py --schwab                     # Schwab API only
-    python main.py --schwab-mock                # Schwab mock data (no credentials needed)
-    python main.py --no-prices                  # Use cached prices, skip yfinance fetch
-    python main.py --from 2023-03-09            # Realized P&L from this date onward
-    python main.py --to 2025-05-31              # Portfolio state and P&L up to this date
+    python main.py                                    # Both CSVs (Firstrade + Schwab)
+    python main.py --firstrade                        # Firstrade CSV only
+    python main.py --schwab-csv                       # Schwab CSV only
+    python main.py --schwab                           # Schwab API only (requires credentials)
+    python main.py --schwab-mock                      # Schwab mock data for testing
+    python main.py --no-prices                        # Use cached prices, skip yfinance fetch
+    python main.py --from 2023-03-09                  # Realized P&L from this date onward
+    python main.py --to 2025-05-31                    # Portfolio state and P&L up to this date
     python main.py --from 2024-01-01 --to 2024-12-31  # Full year range
 """
 
@@ -35,6 +36,7 @@ def _parse_args() -> argparse.Namespace:
     )
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--firstrade",   action="store_true", help="Firstrade CSV only")
+    source.add_argument("--schwab-csv",  action="store_true", help="Schwab CSV export only")
     source.add_argument("--schwab",      action="store_true", help="Schwab API only (requires credentials)")
     source.add_argument("--schwab-mock", action="store_true", help="Schwab mock data — test without credentials")
     parser.add_argument("--no-prices",   action="store_true", help="Use cached prices, skip yfinance")
@@ -88,7 +90,7 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Firstrade
     # -----------------------------------------------------------------------
-    if not args.schwab and not args.schwab_mock:
+    if not args.schwab and not args.schwab_mock and not args.schwab_csv:
         from src.firstrade_parser import parse as parse_firstrade
 
         csv_path = config.get("firstrade", {}).get("csv_path", "./data/firstrade_export.csv")
@@ -103,6 +105,26 @@ def main() -> None:
             warnings.warn(
                 f"Firstrade CSV not found at '{ft_csv}'. "
                 "Export from invest.firstrade.com and place it there, or update config.yaml."
+            )
+
+    # -----------------------------------------------------------------------
+    # Schwab — CSV export
+    # -----------------------------------------------------------------------
+    if args.schwab_csv or (not args.firstrade and not args.schwab and not args.schwab_mock):
+        from src.schwab_parser import parse as parse_schwab
+
+        csv_path = config.get("schwab", {}).get("csv_path", "./data/schwab_export.csv")
+        sc_csv = Path(csv_path)
+
+        if sc_csv.exists():
+            print(f"Parsing Schwab CSV: {sc_csv}")
+            sc_data = parse_schwab(sc_csv, start_date=date_from, end_date=date_to)
+            sources.append(sc_data)
+            print(f"  {len(sc_data[0])} open position(s), {len(sc_data[1])} realized trade(s)")
+        else:
+            warnings.warn(
+                f"Schwab CSV not found at '{sc_csv}'. "
+                "Export from schwab.com → Accounts → History → Export, or update config.yaml."
             )
 
     # -----------------------------------------------------------------------
