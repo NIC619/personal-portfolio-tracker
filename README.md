@@ -4,8 +4,8 @@ A self-hosted CLI tool that aggregates positions and transactions from **Charles
 
 ## Features
 
-- Realized and unrealized P&L across both brokers
-- FIFO cost basis calculation from Firstrade CSV exports
+- Realized and unrealized P&L across both brokers in one table
+- FIFO cost basis from CSV exports (both Firstrade and Schwab)
 - Live prices via Yahoo Finance (free, no API key)
 - Local price cache (15-min TTL) to avoid redundant fetches
 - Date range filtering — snapshot your portfolio at any point in time
@@ -27,83 +27,75 @@ pip install -r requirements.txt
 cp config.yaml.template config.yaml
 ```
 
-Edit `config.yaml` with your paths. The Schwab fields can be left as placeholders until you have API access.
+The defaults work out of the box if you place your exports in `data/`. No credentials needed.
 
-### 3. Add your Firstrade export
+### 3. Export your transaction history
 
+**Firstrade:**
 1. Log in at [invest.firstrade.com](https://invest.firstrade.com)
 2. Go to **Accounts → History → Transaction History**
-3. Select the maximum available date range
-4. Click **Download CSV** and save to `data/firstrade_export.csv`
+3. Select the **maximum available date range**
+4. Click **Download CSV** → save to `data/firstrade_export.csv`
+
+**Schwab:**
+1. Log in at [schwab.com](https://schwab.com)
+2. Go to **Accounts → History → Export**
+3. Select the **maximum available date range**
+4. Save to `data/schwab_export.csv`
+
+> Export the maximum date range each time — FIFO cost basis requires the full trade history from your first purchase in each symbol.
 
 ## Usage
 
 ```bash
-# Firstrade only (default while Schwab access is pending)
+# Both brokers (default)
+python main.py
+
+# Single broker
 python main.py --firstrade
+python main.py --schwab-csv
 
 # Use cached prices instead of fetching live
-python main.py --firstrade --no-prices
+python main.py --no-prices
 
 # Filter by date range
-python main.py --firstrade --from 2024-01-01 --to 2024-12-31
+python main.py --from 2024-01-01 --to 2024-12-31
 
 # Portfolio state as of a specific date
-python main.py --firstrade --to 2025-05-31
+python main.py --to 2025-05-31
 
-# Schwab mock data (test without credentials)
-python main.py --schwab-mock
-
-# Both brokers (once Schwab credentials are set up)
-python main.py
+# Realized P&L from a start date onward
+python main.py --from 2025-01-01
 ```
 
 ### All flags
 
 | Flag | Description |
 |------|-------------|
+| *(none)* | Both Firstrade and Schwab CSVs |
 | `--firstrade` | Firstrade CSV only |
-| `--schwab` | Schwab API only (requires credentials) |
-| `--schwab-mock` | Schwab mock data for testing |
+| `--schwab-csv` | Schwab CSV only |
 | `--from YYYY-MM-DD` | Realized P&L start date (inclusive) |
 | `--to YYYY-MM-DD` | Portfolio snapshot and P&L end date (inclusive) |
 | `--no-prices` | Skip yfinance fetch, use cached prices |
 | `--config PATH` | Path to config file (default: `config.yaml`) |
-
-## Schwab Setup
-
-Schwab requires a one-time developer account and OAuth flow.
-
-1. Apply at [developer.schwab.com](https://developer.schwab.com) — approval takes 1–3 days
-2. Create an app with **"Accounts and Trading Production"** as the API product
-3. Set callback URL to `https://127.0.0.1:8182`
-4. Fill in `app_key`, `app_secret`, and `callback_url` in `config.yaml`
-5. Run the one-time auth flow:
-   ```bash
-   python -c "
-   import yaml
-   from src.schwab_fetcher import authenticate
-   authenticate(yaml.safe_load(open('config.yaml')))
-   "
-   ```
-6. A token file will be saved to `data/schwab_token.json` and auto-refreshed on future runs
-
-> **Note:** Schwab refresh tokens expire after 7 days. Re-run the auth flow if you haven't used the tracker in a week.
 
 ## Project Structure
 
 ```
 portfolio-tracker/
 ├── main.py                  # Entry point
-├── config.yaml              # Your credentials and paths (gitignored)
+├── config.yaml              # Your paths (gitignored)
 ├── config.yaml.template     # Safe-to-commit config template
 ├── data/
-│   ├── firstrade_export.csv # Drop your Firstrade CSV here (gitignored)
-│   ├── firstrade_mock.csv   # Mock data for testing
+│   ├── firstrade_export.csv # Firstrade CSV export (gitignored)
+│   ├── schwab_export.csv    # Schwab CSV export (gitignored)
+│   ├── firstrade_mock.csv   # Mock data for tests
 │   └── cache.json           # Local price cache (gitignored)
 ├── src/
 │   ├── firstrade_parser.py  # Parses Firstrade CSV, FIFO cost basis
-│   ├── schwab_fetcher.py    # Schwab API client + mock
+│   ├── schwab_parser.py     # Parses Schwab CSV, FIFO cost basis
+│   ├── schwab_fetcher.py    # Schwab API client (for future use)
 │   ├── price_fetcher.py     # Yahoo Finance prices with local cache
 │   ├── aggregator.py        # Merges positions from multiple brokers
 │   ├── pnl_engine.py        # Unrealized + realized P&L calculations
@@ -118,11 +110,11 @@ portfolio-tracker/
 python tests/test_pnl.py
 ```
 
-Tests validate FIFO matching, partial lot consumption, dividend skipping, and all portfolio-level metrics against hand-calculated expected values.
+Validates FIFO matching, partial lot consumption, dividend skipping, and all portfolio-level metrics against hand-calculated expected values.
 
 ## Known Limitations
 
-- **Firstrade CSV ordering:** The export does not include timestamps. Same-day trades are assumed to be buy-then-sell. If you had genuine same-day sell-then-buy sequences, cost basis may differ slightly.
-- **Firstrade CSV history:** If your export doesn't cover the full history for a position, the symbol will be flagged with `*` and the cost basis will be understated. Re-export with the maximum date range to fix.
+- **CSV ordering:** Neither Firstrade nor Schwab exports include timestamps. Same-day trades are assumed buy-then-sell. Genuine same-day sell-then-buy sequences may produce slightly different cost basis.
+- **CSV history:** If your export doesn't go back to your first trade in a symbol, that position is flagged with `*` and the cost basis will be understated. Re-export with the maximum date range to fix.
 - **Schwab cost basis:** Reflects what Schwab records — may differ for positions transferred in from another broker.
-- **Prices:** Yahoo Finance data is delayed and occasionally unavailable for thinly traded symbols.
+- **Prices:** Yahoo Finance data is delayed ~15 min and occasionally unavailable for thinly traded symbols. Those positions are excluded from the unrealized P&L calculation with a warning.

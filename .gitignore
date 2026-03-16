@@ -19,6 +19,7 @@ config.yaml
 
 # Data files (may contain sensitive account info)
 data/firstrade_export.csv
+data/schwab_export.csv
 data/schwab_token.json
 data/cache.json
 
