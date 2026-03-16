@@ -108,7 +108,9 @@ def _fetch_from_yfinance(symbols: List[str]) -> Dict[str, float]:
     for symbol in missing:
         try:
             ticker = yf.Ticker(symbol)
-            price = ticker.fast_info.get("last_price") or ticker.fast_info.get("lastPrice")
+            fi = ticker.fast_info
+            # fast_info is a FastInfo object — use attribute access, not .get()
+            price = getattr(fi, "last_price", None) or getattr(fi, "lastPrice", None)
             if price:
                 prices[symbol.upper()] = float(price)
         except Exception as e:
